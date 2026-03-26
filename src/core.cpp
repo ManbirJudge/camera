@@ -34,6 +34,10 @@ Camera::~Camera() {
     this->close();
 }
 
+CamInfo Camera::getInfo() const {
+    return this->info;
+}
+
 bool Camera::open() {
     if (this->is_open) return true;
 
@@ -55,14 +59,14 @@ void Camera::close() {
     this->dev_fd = -1;
 }
 
-bool Camera::config() {
+bool Camera::config(size_t fmtI, size_t resI) {
     if (!this->is_open) {
         Log::e() << "Camera isn't open.";
         return false;
     } 
 
-    Format f = this->info.formats[0];
-    Size r = f.resolutions[f.resolutions.size() - 1];
+    Format f = this->info.formats[fmtI];
+    Size r = f.resolutions[resI];
 
     struct v4l2_format fmt = {0};
 
@@ -183,9 +187,17 @@ void Camera::streamLoop(std::function<void(FrameView)> callback) {
         Log::e() << "Failed to stop streaming.";
         return;
     }
+    
+    // releasing buffers
+    req = {0};
+    req.count = 0;
+    req.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    req.memory = V4L2_MEMORY_MMAP;
 
-    // for (int i = 0; i < req.count; i++)
-    //     munmap(buffers[i], lengths[i]);
+    if (ioctl(this->dev_fd, VIDIOC_REQBUFS, &req) < 0) {
+        Log::e() << "Failed to release buffers.";
+        return;
+    }
 }
 
 void Camera::stopStream() {

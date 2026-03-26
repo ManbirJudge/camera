@@ -8,6 +8,7 @@
 #include <vector>
 
 #include <FL/Fl.H>
+#include <FL/fl_ask.H>
 #include <FL/Fl_Box.H>
 #include <FL/Fl_Button.H>
 #include <FL/Fl_Double_Window.H>
@@ -18,5 +19,51 @@
 #include "core.hpp"
 #include "settings.hpp"
 #include "utils.hpp"
+
+#define UI_GAP 4
+
+class MainWindow {
+private:
+    Settings settings{};
+
+    std::vector<CamInfo> cameras;
+
+    std::unique_ptr<Camera> cam{nullptr};
+
+    std::mutex frame_mtx;
+    std::vector<byte> frame;
+    std::atomic<bool> frame_pending{false};
+
+    std::atomic<bool> should_cap{false};
+
+    Fl_Double_Window* wnd;
+    Fl_Box* _canvas;
+    Fl_Choice* _cam_sel;
+    Fl_Choice* _fmt_sel;
+    Fl_Choice* _res_sel;
+
+    void initUi();
+
+    static void _onWndClose(Fl_Widget* w, void* data);
+    static void _onFrameReceived(void* data);
+    static void _onCapBtnClick(Fl_Widget* w, void* data);
+    static void _onCamSelChange(Fl_Widget* w, void* data);
+    static void _onFmtSelChange(Fl_Widget* w, void* data);
+    static void _onResSelChange(Fl_Widget* w, void* data);
+
+    void onWndClose();
+    void onFrameReceived();
+    void onCapBtnClick();
+    void onCamSelChange();
+    void onFmtSelChange();
+    void onResSelChange();
+
+    void configAndStartCamStream();
+
+public:
+    MainWindow();
+    
+    void show();
+};
 
 #endif

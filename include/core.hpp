@@ -61,6 +61,7 @@ private:
     void streamLoop(std::function<void(FrameView)> callback);
 
 public:
+    
     Camera(CamInfo info);
     Camera(const Camera&) = delete;
     Camera(Camera&& other) noexcept;
@@ -70,10 +71,12 @@ public:
     Camera& operator=(const Camera&) = delete;
     Camera& operator=(Camera&& other) noexcept;
 
+    CamInfo getInfo() const;
+
     bool open();
     void close();
 
-    bool config();
+    bool config(size_t fmtI, size_t resI);
 
     void startStream(std::function<void(FrameView)> callback);
     void stopStream();

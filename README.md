@@ -5,7 +5,7 @@ Build using V4L2 and FLTK.
 - Decide a name.
 - Video.
 - Camera controls.
-- Camera, format and resolution selection.
+- ~~Camera, format and resolution selection.~~
 - Control FPS.
 - Handle multiple camera formats.
 - Optimize
