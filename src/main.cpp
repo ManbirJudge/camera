@@ -125,16 +125,40 @@ void MainWindow::onFrameReceived() {
         _frame = this->frame;
     }
 
-    int w, h, ch;
+    int w, h, ch;  // TODO: get from somewhere trustworthy
+    byte *rgb = nullptr;
+    
+    const Format fmt = this->cam->getInfo().formats[this->_fmt_sel->value()];
+    switch (fmt.pix_fmt) {
+        case PixFmt::MJPEG: {
+            rgb = stbi_load_from_memory(
+                _frame.data(),
+                _frame.size(),
+                &w, &h,
+                &ch,
+                3
+            );
+            break;
+        }
+        case PixFmt::YUYV: {
+            const Size res = fmt.resolutions[this->_res_sel->value()];
+            w = std::get<0>(res);
+            h = std::get<1>(res);
+            ch = 3;
 
-    byte *rgb = stbi_load_from_memory(
-        _frame.data(),
-        _frame.size(),
-        &w, &h,
-        &ch,
-        3
-    );
-    if (!rgb) return;
+            rgb = yuyv2rgb(_frame.data(), w, h);
+            
+            break;
+        }
+        case PixFmt::FUCKU: {
+            Log::e() << "Unknown pixel format.";
+            break;
+        }
+    } 
+    if (!rgb) {
+        frame_pending = false;
+        return;
+    }
 
     int canvas_w = this->_canvas->w();
     int canvas_h = this->_canvas->h();

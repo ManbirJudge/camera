@@ -1,16 +1,18 @@
 #ifndef CORE_H
 #define CORE_H
 
-#include <string>
-#include <vector>
-#include <iostream>
-#include <cstdio>
-#include <tuple>
-#include <sstream>
 #include <algorithm>
-#include <functional>
 #include <atomic>
+#include <cstdio>
+#include <cstdint>
+#include <cstdlib>
+#include <functional>
+#include <iostream>
+#include <sstream>
+#include <string>
 #include <thread>
+#include <tuple>
+#include <vector>
 
 #include <sys/mman.h>
 #include <sys/ioctl.h>
@@ -20,12 +22,23 @@
 
 #include "log.hpp"
 
-typedef u_int8_t byte;
+typedef uint8_t byte;
 typedef std::tuple<int, int> Size;
+
+enum class PixFmt : uint32_t {
+    MJPEG = V4L2_PIX_FMT_MJPEG,
+
+    YUYV  = V4L2_PIX_FMT_YUYV ,
+
+    FUCKU = 0
+};
+PixFmt v4l2ToPixFmt(uint32_t fmt);
+uint32_t pixFmtToV4l2(PixFmt fmt);
+std::string pixFmtToStr(PixFmt fmt);
 
 typedef struct {
     std::string name;
-    u_int32_t pix_fmt;
+    PixFmt pix_fmt;
     std::vector<Size> resolutions;
 } Format;
 
@@ -89,5 +102,7 @@ public:
     std::string fmt();
     static std::string fmtCam(const CamInfo& info);
 };
+
+byte* yuyv2rgb(const byte* yuyv, size_t w, size_t h);
 
 #endif

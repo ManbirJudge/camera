@@ -1,5 +1,29 @@
 #include "core.hpp"
 
+PixFmt v4l2ToPixFmt(uint32_t fmt) {
+    switch (fmt) {
+        case V4L2_PIX_FMT_MJPEG: return PixFmt::MJPEG;
+
+        case V4L2_PIX_FMT_YUYV : return PixFmt::YUYV;
+
+        default:                 return PixFmt::FUCKU;
+    }
+}
+
+uint32_t pixFmtToV4l2(PixFmt fmt) {
+    return static_cast<uint32_t>(fmt);
+}
+
+std::string pixFmtToStr(PixFmt fmt) {
+    switch(fmt) {
+        case PixFmt::MJPEG: return "Motion JPEG";
+        case PixFmt::YUYV : return "YUYV";
+        case PixFmt::FUCKU: return "Unknown";
+    }
+    __builtin_unreachable();
+}
+
+// ---
 Camera::Camera(CamInfo info): info(info) {
 }
 
@@ -68,13 +92,15 @@ bool Camera::config(size_t fmtI, size_t resI) {
     Format f = this->info.formats[fmtI];
     Size r = f.resolutions[resI];
 
+    Log::d() << pixFmtToStr(f.pix_fmt);
+
     struct v4l2_format fmt = {0};
 
     fmt.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
 
     fmt.fmt.pix.width = std::get<0>(r);
     fmt.fmt.pix.height = std::get<1>(r);
-    fmt.fmt.pix.pixelformat = f.pix_fmt;
+    fmt.fmt.pix.pixelformat = pixFmtToV4l2(f.pix_fmt);
     fmt.fmt.pix.field = V4L2_FIELD_NONE;
 
     return ioctl(this->dev_fd, VIDIOC_S_FMT, &fmt) >= 0;
@@ -271,7 +297,7 @@ std::vector<CamInfo> Camera::getCams() {
             // ---
             cam.formats.push_back(Format {
                 .name = fmt_name,
-                .pix_fmt = fmt.pixelformat, 
+                .pix_fmt = v4l2ToPixFmt(fmt.pixelformat), 
                 .resolutions = resolutions
             });
             fmt.index++;
@@ -324,4 +350,43 @@ std::string Camera::fmtCam(const CamInfo& info) {
     }
 
     return oss.str();
+}
+
+byte* yuyv2rgb(const byte* yuyv, size_t w, size_t h) {
+    size_t n_pix = w * h;
+    byte* rgb = (byte*)malloc(n_pix * 3);
+
+    if (!rgb) return nullptr;
+
+    size_t j = 0;
+
+    auto clamp = [](int x) {
+        return (x < 0) ? 0 : (x > 255 ? 255 : x);
+    };
+
+    auto cvt = [rgb, &j, clamp](int y, int u, int v) {
+        int c = y - 16;
+        int d = u - 128;
+        int e = v - 128;
+
+        int r = (298 * c + 409 * e + 128) >> 8;
+        int g = (298 * c - 100 * d - 208 * e + 128) >> 8;
+        int b = (298 * c + 516 * d + 128) >> 8;
+
+        rgb[j++] = clamp(r);
+        rgb[j++] = clamp(g);
+        rgb[j++] = clamp(b);
+    };
+
+    for (size_t i = 0; i < n_pix * 2;) {
+        int y0 = yuyv[i++];
+        int u  = yuyv[i++];
+        int y1 = yuyv[i++];
+        int v  = yuyv[i++];
+
+        cvt(y0, u, v);
+        cvt(y1, u, v);
+    }
+
+    return rgb;
 }

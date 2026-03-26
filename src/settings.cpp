@@ -23,6 +23,8 @@ Settings::Settings() {
                 this->out_dir = val;
             else if (key == "filename-fmt")
                 this->filename_fmt = val;
+            else if (key == "sound-effects")
+                this->sound_effects = val == "true";
             else
                 Log::w() << "Unknown settings key: '" << key << '\''; 
         }
@@ -44,6 +46,7 @@ void Settings::save() {
 
     f << "out-dir=" << this->out_dir << std::endl;
     f << "filename-fmt=" << this->filename_fmt << std::endl;
+    f << "sound-effects=" << (this->sound_effects ? "true" : "false") << std::endl;
 
     f.close();
 }
