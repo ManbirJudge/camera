@@ -40,8 +40,6 @@ bool Camera::open() {
     this->dev_fd = ::open(this->info.device.c_str(), O_RDWR);
     this->is_open = this->dev_fd >= 0;
 
-    Log::d() << "Camera opened.";
-
     return this->is_open;
 }
 
@@ -55,23 +53,25 @@ void Camera::close() {
 
     this->is_open = false;
     this->dev_fd = -1;
-
-    Log::d() << "Camera closed.";
 }
 
 bool Camera::config() {
-    if (!this->is_open) return false;
+    if (!this->is_open) {
+        Log::e() << "Camera isn't open.";
+        return false;
+    } 
+
+    Format f = this->info.formats[0];
+    Size r = f.resolutions[f.resolutions.size() - 1];
 
     struct v4l2_format fmt = {0};
 
     fmt.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
 
-    fmt.fmt.pix.width = std::get<0>(this->info.formats.at(0).resolutions.at(0));
-    fmt.fmt.pix.height = std::get<1>(this->info.formats.at(0).resolutions.at(0));
-    fmt.fmt.pix.pixelformat = this->info.formats.at(0).pix_fmt;
+    fmt.fmt.pix.width = std::get<0>(r);
+    fmt.fmt.pix.height = std::get<1>(r);
+    fmt.fmt.pix.pixelformat = f.pix_fmt;
     fmt.fmt.pix.field = V4L2_FIELD_NONE;
-
-    Log::d() << "Camera configured.";
 
     return ioctl(this->dev_fd, VIDIOC_S_FMT, &fmt) >= 0;
 }
@@ -87,8 +87,6 @@ void Camera::startStream(std::function<void(FrameView)> callback) {
     }
 
     this->streamWorker = std::thread(&Camera::streamLoop, this, callback);
-
-    Log::d() << "Streaming started.";
 }
 
 void Camera::streamLoop(std::function<void(FrameView)> callback) {
@@ -194,8 +192,6 @@ void Camera::stopStream() {
     this->is_streaming = false;
     if (this->streamWorker.joinable())
         this->streamWorker.join();
-
-    Log::d() << "Stream stopped.";
 }
 
 bool Camera::isOpen() {
@@ -297,22 +293,20 @@ std::string Camera::fmt() {
 std::string Camera::fmtCam(const CamInfo& info) {
     std::ostringstream oss;
 
-    oss << "Device: " << info.device << "\n";
-    oss << "Driver: " << info.driver << "\n";
-    oss << "Card  : " << info.card   << "\n";
-    oss << "Bus   : " << info.bus    << "\n";
-
-    oss << "\n[Supported Formats]\n";
+    oss << "Device : " << info.device << "\n";
+    oss << "Driver : " << info.driver << "\n";
+    oss << "Card   : " << info.card   << "\n";
+    oss << "Bus    : " << info.bus    << "\n";
+    oss << "\n[Formats]\n";
     for (const auto& fmt : info.formats) {
-        oss << "  > " << fmt.name << " (";
+        oss << "  - " << fmt.name << " (";
         for (size_t i = 0; i < fmt.resolutions.size(); ++i) {
             oss << std::get<0>(fmt.resolutions[i]) << "x" << std::get<1>(fmt.resolutions[i]);
             if (i < fmt.resolutions.size() - 1) oss << ", ";
         }
         oss << ")\n";
     }
-
-    oss << "\n[Available Controls]\n";
+    oss << "\n[Controls]\n";
     for (const auto& ctrl : info.controls) {
         oss << "  - " << ctrl.name << "\n";
     }

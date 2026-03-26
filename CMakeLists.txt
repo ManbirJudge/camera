@@ -14,7 +14,14 @@ set(CMAKe_CXX_COMPILER g++)
 
 find_package(FLTK REQUIRED)
 
-file(GLOB SRC_FILES "src/*.cpp")
+set(
+    SRC_FILES
+    src/core.cpp
+    src/main.cpp
+    src/settings.cpp
+    src/stb_impl.c
+    src/utils.cpp
+)
 add_executable(camera ${SRC_FILES})
 
 target_include_directories(camera PRIVATE ${FLTK_INCLUDE_DIR})

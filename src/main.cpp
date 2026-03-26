@@ -69,16 +69,37 @@ void on_cap_btn_click(Fl_Widget *w, void *data) {
 }
 
 int main(int argc, char** argv) {
+    Settings settings;
+
     Fl::lock();
 
+    // --- ui
+    // window
     Fl_Double_Window *wnd = new Fl_Double_Window(400, 300, "Camera");
 
-    Fl_Flex *col = new Fl_Flex(0, 0, 400, 300, Fl_Flex::VERTICAL);
+    // root
+    Fl_Flex *root = new Fl_Flex(0, 0, 400, 300, Fl_Flex::VERTICAL);
+    root->gap(8);
 
+    // toolbar
+    // Fl_Flex *toolbar = new Fl_Flex(0, 0, 0, 0, Fl_Flex::HORIZONTAL);
+    // toolbar->gap(8);
+
+    // Fl_Choice *cam_sel = new Fl_Choice(0, 0, 0, 0);
+    // Fl_Choice *fmt_sel = new Fl_Choice(0, 0, 0, 0);
+    // Fl_Choice *res_sel = new Fl_Choice(0, 0, 0, 0);
+    // new Fl_Box(0, 0, 0, 0);
+    // Fl_Button *settings_btn = new Fl_Button(0, 0, 0, 0, "⚙️");
+
+    // toolbar->fixed(settings_btn, 40);
+    // toolbar->end();
+    
+    // canvas
     Fl_Box *canvas = new Fl_Box(0, 0, 0, 0);
 
+    // controls
     Fl_Flex *controls = new Fl_Flex(0, 0, 0, 0, Fl_Flex::HORIZONTAL);
-    controls->gap(10);
+    controls->gap(8);
 
     new Fl_Box(0, 0, 0, 0);
 
@@ -90,19 +111,44 @@ int main(int argc, char** argv) {
     controls->fixed(cap_btn, 96);
     controls->end();
 
-    col->fixed(controls, 32);
-    col->end();
+    // finalize
+    // root->fixed(toolbar, 32);
+    root->fixed(controls, 32);
+    root->end();
 
-    wnd->resizable(col);
+    wnd->resizable(controls);
     wnd->end();
+
     wnd->callback(on_wnd_close);
     wnd->show(argc, argv);
 
+    // init
     std::vector<CamInfo> cameras = Camera::getCams();
-    g_cam = std::unique_ptr<Camera>(new Camera(cameras.at(0)));
+
+    // std::string _ = Utils::join<CamInfo>(cameras, "|", [](const CamInfo& info) {
+    //     return info.card;
+    // });
+    // cam_sel->add(_.c_str());
+    // _ = Utils::join<Format>(cameras[0].formats, "|", [](const Format& fmt) {
+    //     return fmt.name;
+    // });
+    // fmt_sel->add(_.c_str());
+    // _ = Utils::join<Size>(cameras[0].formats[0].resolutions, "|", [](const Size& size) {
+    //     return std::to_string(std::get<0>(size)) + "x" + std::to_string(std::get<1>(size));
+    // });
+    // res_sel->add(_.c_str());
+
+    Log::d() << "Found " << cameras.size() << " cameras:";
+    for (size_t i = 0; i < cameras.size(); i++) {
+        std::cout << i << " ------------------" << std::endl;
+        std::cout << Camera::fmtCam(cameras[i]) << std::endl;
+    }
+
+    g_cam = std::unique_ptr<Camera>(new Camera(cameras[cameras.size() - 1]));
 
     g_cam->open();
-    g_cam->startStream([canvas](FrameView fv) {
+    g_cam->config();
+    g_cam->startStream([canvas, settings](FrameView fv) {
         {
             std::lock_guard<std::mutex> lock(g_frame_mtx);
 
@@ -111,15 +157,20 @@ int main(int argc, char** argv) {
         }
 
         if (g_cap.exchange(false)) {
-            FILE *f = fopen("cap.jpg", "wb");
+            std::string filePath = settings.out_dir + "/" + Utils::getFormattedDt(settings.filename_fmt) + ".jpg";
+
+            FILE *f = fopen(filePath.c_str(), "wb");
             if (f) {
                 fwrite(fv.data, fv.size, 1, f);
                 fclose(f);
             }
+
+            Log::d() << "Saved to: " << filePath;
         }
 
         Fl::awake(on_frame_received, canvas);
     });
     
+    // ---
     return Fl::run();
 }

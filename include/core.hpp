@@ -1,3 +1,6 @@
+#ifndef CORE_H
+#define CORE_H
+
 #include <string>
 #include <vector>
 #include <iostream>
@@ -83,3 +86,5 @@ public:
     std::string fmt();
     static std::string fmtCam(const CamInfo& info);
 };
+
+#endif
