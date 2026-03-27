@@ -27,14 +27,11 @@ typedef std::tuple<int, int> Size;
 
 enum class PixFmt : uint32_t {
     MJPEG = V4L2_PIX_FMT_MJPEG,
-
     YUYV  = V4L2_PIX_FMT_YUYV ,
-
     FUCKU = 0
 };
 PixFmt v4l2ToPixFmt(uint32_t fmt);
 uint32_t pixFmtToV4l2(PixFmt fmt);
-std::string pixFmtToStr(PixFmt fmt);
 
 typedef struct {
     std::string name;
@@ -42,8 +39,25 @@ typedef struct {
     std::vector<Size> resolutions;
 } Format;
 
+enum class CtrlType : uint32_t {
+    Int  = V4L2_CTRL_TYPE_INTEGER,
+    Bool = V4L2_CTRL_TYPE_BOOLEAN,
+    Menu = V4L2_CTRL_TYPE_MENU   ,
+    Btn  = V4L2_CTRL_TYPE_BUTTON ,
+    Fuck = 0
+};
+CtrlType v4l2ToCtrlType(uint32_t ctrl_type);
+uint32_t ctrlTypeToV4l2(CtrlType ctrl_type);
+std::string ctrlTypeToStr(CtrlType ctrl_type);
+
 typedef struct {
+    uint32_t id;
+    CtrlType type;
     std::string name;
+    int32_t min;
+    int32_t max;
+    int32_t step;
+    int32_t default_val;
 } Control;
 
 typedef struct {
@@ -93,6 +107,8 @@ public:
 
     void startStream(std::function<void(FrameView)> callback);
     void stopStream();
+
+    bool setCtrl(uint32_t ctrl_id, int32_t val);
 
     bool isOpen();
     bool isStreaming();

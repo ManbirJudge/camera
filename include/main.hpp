@@ -11,9 +11,13 @@
 #include <FL/fl_ask.H>
 #include <FL/Fl_Box.H>
 #include <FL/Fl_Button.H>
+#include <FL/Fl_Check_Button.H>
+#include <FL/Fl_Choice.H>
 #include <FL/Fl_Double_Window.H>
 #include <FL/Fl_Flex.H>
-#include <FL/Fl_Choice.H>
+#include <FL/Fl_Grid.H>
+#include <FL/Fl_Scroll.H>
+#include <FL/Fl_Value_Slider.H>
 #include "stb_image.h"
 
 #include "core.hpp"
@@ -50,6 +54,8 @@ private:
     static void _onCamSelChange(Fl_Widget* w, void* data);
     static void _onFmtSelChange(Fl_Widget* w, void* data);
     static void _onResSelChange(Fl_Widget* w, void* data);
+    static void _onCtrlsBtnClick(Fl_Widget* w, void* data);
+    static void _camCtrlCallback(Fl_Widget* w, void* data);
 
     void onWndClose();
     void onFrameReceived();
@@ -57,6 +63,8 @@ private:
     void onCamSelChange();
     void onFmtSelChange();
     void onResSelChange();
+    void onCtrlsBtnClick();
+    void camCtrlCallback(uint32_t ctrl_id, int32_t val);
 
     void configAndStartCamStream();
 
@@ -65,5 +73,10 @@ public:
     
     void show();
 };
+
+typedef struct  {
+    MainWindow* wnd;
+    uint32_t ctrl_id;
+} CtrlCallbackData;
 
 #endif

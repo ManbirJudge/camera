@@ -7,7 +7,7 @@
 
 class Log {
 public:
-    enum Level { DEBUG, INFO, WARN, ERROR };
+    enum Level { VERBOSE, DEBUG, INFO, WARN, ERROR };
 
     class LogStream {
     private:
@@ -17,10 +17,11 @@ public:
         LogStream(Level lvl) {
             switch (lvl)
             {
-                case DEBUG: std::cout << "[DEBUG] "; break;
-                case INFO : std::cout << "[ INFO] "; break;
-                case WARN : std::cout << "[ WARN] "; break;
-                case ERROR: std::cout << "[ERROR] "; break;
+                case VERBOSE: break;
+                case DEBUG  : std::cout << "[DEBUG] "; break;
+                case INFO   : std::cout << "[ INFO] "; break;
+                case WARN   : std::cout << "[ WARN] "; break;
+                case ERROR  : std::cout << "[ERROR] "; break;
             }
         }
 
@@ -40,10 +41,11 @@ public:
         }
     };
 
-    static LogStream d() { return LogStream(DEBUG); };
-    static LogStream i() { return LogStream(INFO ); };
-    static LogStream w() { return LogStream(WARN ); };
-    static LogStream e() { return LogStream(ERROR); };
+    static LogStream v() { return LogStream(VERBOSE); };
+    static LogStream d() { return LogStream(DEBUG  ); };
+    static LogStream i() { return LogStream(INFO   ); };
+    static LogStream w() { return LogStream(WARN   ); };
+    static LogStream e() { return LogStream(ERROR  ); };
 };
 
 #endif

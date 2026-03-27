@@ -1,11 +1,11 @@
 #include "main.hpp" 
 
 MainWindow::MainWindow() : cameras(Camera::getCams()) {
-    Log::d() << "Found " << cameras.size() << " cameras:";
-    for (size_t i = 0; i < cameras.size(); i++) {
-        std::cout << i << " ------------------" << std::endl;
-        std::cout << Camera::fmtCam(cameras[i]) << std::endl;
-    }
+    // Log::d() << "Found " << cameras.size() << " cameras:";
+    // for (size_t i = 0; i < cameras.size(); i++) {
+    //     std::cout << i << " ------------------" << std::endl;
+    //     std::cout << Camera::fmtCam(cameras[i]) << std::endl;
+    // }
 
     Fl::lock();
 
@@ -14,10 +14,10 @@ MainWindow::MainWindow() : cameras(Camera::getCams()) {
 
 void MainWindow::initUi() {
     // window
-    this->wnd = new Fl_Double_Window(400, 300, "Camera");
+    this->wnd = new Fl_Double_Window(500, 400, "Camera");
 
     // root
-    Fl_Flex *root = new Fl_Flex(0, 0, 400, 300, Fl_Flex::VERTICAL);
+    Fl_Flex *root = new Fl_Flex(0, 0, 500, 400, Fl_Flex::VERTICAL);
     root->margin(UI_GAP);
     root->gap(UI_GAP);
 
@@ -29,16 +29,17 @@ void MainWindow::initUi() {
     this->_fmt_sel = new Fl_Choice(0, 0, 0, 0);
     this->_res_sel = new Fl_Choice(0, 0, 0, 0);
     new Fl_Box(0, 0, 0, 0);
-    Fl_Button *settings_btn = new Fl_Button(0, 0, 0, 0, "⚙️");
+    Fl_Button* controls_btn = new Fl_Button(0, 0, 0, 0, "Controls");
 
     this->_cam_sel->callback(MainWindow::_onCamSelChange, this);
     this->_fmt_sel->callback(MainWindow::_onFmtSelChange, this);
     this->_res_sel->callback(MainWindow::_onResSelChange, this);
+    controls_btn->callback(MainWindow::_onCtrlsBtnClick, this);
 
-    toolbar->fixed(this->_cam_sel, 96);
-    toolbar->fixed(this->_fmt_sel, 96);
-    toolbar->fixed(this->_res_sel, 96);
-    toolbar->fixed(settings_btn, 32);
+    toolbar->fixed(this->_cam_sel, 112);
+    toolbar->fixed(this->_fmt_sel, 112);
+    toolbar->fixed(this->_res_sel, 112);
+    toolbar->fixed(controls_btn,   96 );
     toolbar->end();
     
     // canvas
@@ -76,6 +77,10 @@ void MainWindow::initUi() {
 }
 
 void MainWindow::show() {
+    if (this->cameras.size() > 0) {
+        this->_cam_sel->value(0);
+        this->onCamSelChange();
+    }
     this->wnd->show();
 }
 
@@ -108,6 +113,27 @@ void MainWindow::_onFmtSelChange(Fl_Widget* w, void* data) {
 void MainWindow::_onResSelChange(Fl_Widget* w, void* data) {
     MainWindow* inst = static_cast<MainWindow*>(data);
     inst->onResSelChange();
+}
+
+void MainWindow::_onCtrlsBtnClick(Fl_Widget* w, void* data) {
+    MainWindow* inst = static_cast<MainWindow*>(data);
+    inst->onCtrlsBtnClick();
+}
+
+void MainWindow::_camCtrlCallback(Fl_Widget* w, void* data) {
+    CtrlCallbackData* cbData = static_cast<CtrlCallbackData*>(data);
+    MainWindow* wnd = cbData->wnd;
+
+    int32_t val = 0;
+    if (Fl_Value_Slider* s = dynamic_cast<Fl_Value_Slider*>(w)) {
+        val = (int32_t)s->value();
+    } else if (Fl_Check_Button* cb = dynamic_cast<Fl_Check_Button*>(w)) {
+        val = cb->value();
+    }
+
+    wnd->camCtrlCallback(cbData->ctrl_id, val);
+
+    // delete cbData;
 }
 
 // event handlers
@@ -243,6 +269,72 @@ void MainWindow::onResSelChange() {
     this->configAndStartCamStream();
 }
 
+void MainWindow::onCtrlsBtnClick() {
+    if (this->cam == nullptr) return;
+
+    Fl_Window* ctrls_wnd = new Fl_Window(400, 400, "Controls");
+
+    Fl_Grid* grid = new Fl_Grid(
+        0, 0,
+        400, 400
+    );
+    grid->layout((int)this->cam->getInfo().controls.size(), 2, UI_GAP, UI_GAP);
+    grid->col_width(0, 150);
+    grid->col_width(1, 250);
+
+    size_t i = 0;
+    for (const Control& ctrl : this->cam->getInfo().controls) {
+        Fl_Box* lbl = new Fl_Box(0, 0, 1, 1);
+        lbl->copy_label(ctrl.name.c_str());
+        lbl->align(FL_ALIGN_RIGHT | FL_ALIGN_INSIDE);
+
+        CtrlCallbackData* cbData = new CtrlCallbackData{ this, ctrl.id };  // TODO: delete this somewhere
+
+        Fl_Widget* w = nullptr;
+        switch (ctrl.type)
+        {
+        case CtrlType::Int: {
+            Fl_Value_Slider* s = new Fl_Value_Slider(0, 0, 1, 1);
+            s->type(FL_HOR_SLIDER);
+            s->bounds(ctrl.min, ctrl.max);
+            s->step(ctrl.step);
+            s->value(ctrl.default_val);
+            w = s;
+            break;
+        }
+        case CtrlType::Bool: {
+            Fl_Check_Button* cb = new Fl_Check_Button(0, 0, 1, 1);
+            cb->value(ctrl.default_val);
+            w = cb;
+            break;
+        }
+        case CtrlType::Btn: {
+            w = new Fl_Button(0, 0, 1, 1, "Execute");
+            break;
+        }
+        default:
+            w = new Fl_Box(0, 0, 1, 1, "NOT SUPPORTED");
+            break;
+        }
+
+        w->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
+        w->callback(MainWindow::_camCtrlCallback, cbData);
+        
+        grid->widget(lbl, i, 0);
+        grid->widget(w, i++, 1);
+    }
+
+    grid->end();
+    ctrls_wnd->end();
+    
+    ctrls_wnd->show();
+}
+
+void MainWindow::camCtrlCallback(uint32_t ctrl_id, int32_t val) {
+    this->cam->setCtrl(ctrl_id, val);
+}
+
+// ---
 void MainWindow::configAndStartCamStream() {
     if (!this->cam->config(this->_fmt_sel->value(), this->_res_sel->value())) {
         fl_alert("Failed to configure the camera.");

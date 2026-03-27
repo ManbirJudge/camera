@@ -2,9 +2,13 @@
 A simple camera app for Linux.<br>
 Build using V4L2 and FLTK.
 ## TODOs
+- **Imporant:** Error hanldling.
 - Decide a name.
-- Video.
 - Camera controls.
+  - Responsive scorllable UI.
+  - More control types.
+  - Load actual values, not default.
+  - Maybe - verify values after setting to make sure they are set correctly?
 - ~~Camera, format and resolution selection.~~
 - Control FPS.
 - Handle multiple camera formats.
@@ -14,3 +18,4 @@ Build using V4L2 and FLTK.
   - Scale -> Render
   - We can use OpenGL for RGB -> Scale -> Render?
 - Camera shutter sound effect.
+- Maybe: Video?

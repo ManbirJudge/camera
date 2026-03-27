@@ -3,10 +3,8 @@
 PixFmt v4l2ToPixFmt(uint32_t fmt) {
     switch (fmt) {
         case V4L2_PIX_FMT_MJPEG: return PixFmt::MJPEG;
-
-        case V4L2_PIX_FMT_YUYV : return PixFmt::YUYV;
-
-        default:                 return PixFmt::FUCKU;
+        case V4L2_PIX_FMT_YUYV : return PixFmt::YUYV ;
+        default                : return PixFmt::FUCKU;
     }
 }
 
@@ -14,11 +12,27 @@ uint32_t pixFmtToV4l2(PixFmt fmt) {
     return static_cast<uint32_t>(fmt);
 }
 
-std::string pixFmtToStr(PixFmt fmt) {
-    switch(fmt) {
-        case PixFmt::MJPEG: return "Motion JPEG";
-        case PixFmt::YUYV : return "YUYV";
-        case PixFmt::FUCKU: return "Unknown";
+CtrlType v4l2ToCtrlType(uint32_t ctrl_type) {
+    switch (ctrl_type) {
+        case V4L2_CTRL_TYPE_INTEGER: return CtrlType::Int ;
+        case V4L2_CTRL_TYPE_BOOLEAN: return CtrlType::Bool;
+        case V4L2_CTRL_TYPE_MENU   : return CtrlType::Menu;
+        case V4L2_CTRL_TYPE_BUTTON : return CtrlType::Btn ;
+        default                    : return CtrlType::Fuck;
+    }
+}
+
+uint32_t ctrlTypeToV4l2(CtrlType ctrl_type) {
+    return static_cast<uint32_t>(ctrl_type);
+}
+
+std::string ctrlTypeToStr(CtrlType ctrl_type) {
+    switch (ctrl_type) {
+        case CtrlType::Bool: return "Boolean";
+        case CtrlType::Btn : return "Button" ;
+        case CtrlType::Fuck: return "Unknown";
+        case CtrlType::Int : return "Integer";
+        case CtrlType::Menu: return "Menu"   ;
     }
     __builtin_unreachable();
 }
@@ -91,8 +105,6 @@ bool Camera::config(size_t fmtI, size_t resI) {
 
     Format f = this->info.formats[fmtI];
     Size r = f.resolutions[resI];
-
-    Log::d() << pixFmtToStr(f.pix_fmt);
 
     struct v4l2_format fmt = {0};
 
@@ -232,6 +244,31 @@ void Camera::stopStream() {
         this->streamWorker.join();
 }
 
+bool Camera::setCtrl(uint32_t ctrl_id, int32_t val) {
+    if (!this->is_open) {
+        Log::e() << "Camera not open.";
+        return false;
+    }
+    
+    struct v4l2_control ctrl = {};
+
+    // if (std::find_if(
+    //     this->info.controls.begin(),
+    //     this->info.controls.end(),
+    //     [ctrl_id](const Control& c) {
+    //         return c.id == ctrl_id;
+    //     }
+    // ) == this->info.controls.end()) {
+    //     Log::e() << "Control with id=" << ctrl_id << " not found.";
+    //     return false;
+    // }
+
+    ctrl.id = ctrl_id;
+    ctrl.value = val;
+
+    return ioctl(this->dev_fd, VIDIOC_S_CTRL, &ctrl);
+}
+
 bool Camera::isOpen() {
     return this->is_open;
 }
@@ -308,9 +345,16 @@ std::vector<CamInfo> Camera::getCams() {
 
         for (ctrl.id = V4L2_CID_BASE; ctrl.id < V4L2_CID_LASTP1; ctrl.id++) {
             if (ioctl(f, VIDIOC_QUERYCTRL, &ctrl) == 0) {
-                cam.controls.push_back(Control {
-                    .name = reinterpret_cast<const char*>(ctrl.name)
-                });
+                if (!(ctrl.flags & V4L2_CTRL_FLAG_DISABLED)) 
+                    cam.controls.push_back(Control {
+                        .id = ctrl.id,
+                        .type = v4l2ToCtrlType(ctrl.type),
+                        .name = reinterpret_cast<const char*>(ctrl.name),
+                        .min = ctrl.minimum,
+                        .max = ctrl.maximum,
+                        .step = ctrl.step,
+                        .default_val = ctrl.default_value
+                    });
             }
         }
 
@@ -345,8 +389,10 @@ std::string Camera::fmtCam(const CamInfo& info) {
         oss << ")\n";
     }
     oss << "\n[Controls]\n";
-    for (const auto& ctrl : info.controls) {
-        oss << "  - " << ctrl.name << "\n";
+    for (size_t i = 0, n = info.controls.size(); i < n; i++) {
+        const Control ctrl = info.controls[i];
+        oss << "  - " << ctrl.name << " (" << ctrlTypeToStr(ctrl.type) << ')';
+        if (i < n - 1) oss << "\n";
     }
 
     return oss.str();
