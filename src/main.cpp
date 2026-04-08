@@ -1,11 +1,11 @@
 #include "main.hpp" 
 
 MainWindow::MainWindow() : cameras(Camera::getCams()) {
-    // Log::d() << "Found " << cameras.size() << " cameras:";
-    // for (size_t i = 0; i < cameras.size(); i++) {
-    //     std::cout << i << " ------------------" << std::endl;
-    //     std::cout << Camera::fmtCam(cameras[i]) << std::endl;
-    // }
+    Log::d() << "Found " << cameras.size() << " cameras:";
+    for (size_t i = 0; i < cameras.size(); i++) {
+        std::cout << i << " ------------------" << std::endl;
+        std::cout << Camera::fmtCam(cameras[i]) << std::endl;
+    }
 
     Fl::lock();
 
@@ -138,32 +138,74 @@ void MainWindow::_camCtrlCallback(Fl_Widget* w, void* data) {
 
 // event handlers
 void MainWindow::onWndClose() {
-    if (this->cam != nullptr)
-        this->cam->close();
+    if (this->cam != nullptr) this->cam->close();
+    if (this->rgb) std::free(this->rgb);
     this->wnd->hide();
 }
 
 void MainWindow::onFrameReceived() {
-    std::vector<byte> _frame;
+    std::lock_guard<std::mutex> rgb_lock(this->rgb_mtx);
 
+    std::vector<byte> _frame;
     {
         std::lock_guard<std::mutex> lock(this->frame_mtx);
         _frame = this->frame;
     }
 
+    bool success = false;
     int w, h, ch;  // TODO: get from somewhere trustworthy
-    byte *rgb = nullptr;
     
     const Format fmt = this->cam->getInfo().formats[this->_fmt_sel->value()];
     switch (fmt.pix_fmt) {
         case PixFmt::MJPEG: {
-            rgb = stbi_load_from_memory(
-                _frame.data(),
-                _frame.size(),
-                &w, &h,
-                &ch,
-                3
-            );
+            struct jpeg_decompress_struct jInf;
+            struct ErrMgr {
+                struct jpeg_error_mgr pub;
+                jmp_buf buf;
+            } jErr;
+
+            // error handling
+            jInf.err = jpeg_std_error(&jErr.pub);
+
+            jErr.pub.error_exit = [](j_common_ptr inf) {
+                ErrMgr* err = (ErrMgr*)inf->err;
+                longjmp(err->buf, 1);
+            };
+
+            if (setjmp(jErr.buf)) {
+                jpeg_destroy_decompress(&jInf);
+                break;
+            }
+            
+            // ---
+            jpeg_create_decompress(&jInf);  // TODO: reuse instead of destroying everytime
+
+            jpeg_mem_src(&jInf, _frame.data(), _frame.size());
+
+            jpeg_read_header(&jInf, TRUE);
+
+            jInf.dct_method = JDCT_FASTEST;
+            jInf.do_fancy_upsampling = FALSE;
+            jInf.do_block_smoothing = FALSE;
+
+            jpeg_start_decompress(&jInf);
+
+            w = jInf.output_width;
+            h = jInf.output_height;
+            ch = jInf.output_components;
+
+            unsigned long buf_size = w * h * ch;
+            if (buf_size > rgb_size) break;
+
+            while (jInf.output_scanline < jInf.output_height) {
+                byte* row_ptr = this->rgb + jInf.output_scanline * w * ch;
+                jpeg_read_scanlines(&jInf, &row_ptr, 1);
+            }
+
+            jpeg_finish_decompress(&jInf);
+            jpeg_destroy_decompress(&jInf);
+
+            success = true;
             break;
         }
         case PixFmt::YUYV: {
@@ -172,8 +214,9 @@ void MainWindow::onFrameReceived() {
             h = std::get<1>(res);
             ch = 3;
 
-            rgb = yuyv2rgb(_frame.data(), w, h);
+            yuyv2rgb(_frame.data(), w, h, this->rgb);
             
+            success = true;
             break;
         }
         case PixFmt::FUCKU: {
@@ -181,19 +224,16 @@ void MainWindow::onFrameReceived() {
             break;
         }
     } 
-    if (!rgb) {
+    if (!success) {
         frame_pending = false;
         return;
     }
 
     int canvas_w = this->_canvas->w();
     int canvas_h = this->_canvas->h();
-
     float img_ratio = (float)w / h;
     float canvas_ratio = (float)canvas_w / canvas_h;
-
     int new_w, new_h;
-
     if (img_ratio > canvas_ratio) {
         new_w = canvas_w;
         new_h = canvas_w / img_ratio;
@@ -202,10 +242,9 @@ void MainWindow::onFrameReceived() {
         new_w = canvas_h * img_ratio;
     }
 
-    Fl_RGB_Image* img = new Fl_RGB_Image(rgb, w, h, 3);
+    Fl_RGB_Image* img = new Fl_RGB_Image(this->rgb, w, h, 3);
     Fl_RGB_Image* scaled_copy = (Fl_RGB_Image*)img->copy(new_w, new_h);
 
-    stbi_image_free(rgb);
     delete img;
     
     if (this->_canvas->image()) delete this->_canvas->image();
@@ -274,13 +313,17 @@ void MainWindow::onCtrlsBtnClick() {
 
     Fl_Window* ctrls_wnd = new Fl_Window(400, 400, "Controls");
 
+    Fl_Scroll* scroll = new ResponsiveScroll(0, 0, 400, 400);
+    scroll->type(Fl_Scroll::VERTICAL);
+
     Fl_Grid* grid = new Fl_Grid(
         0, 0,
         400, 400
     );
     grid->layout((int)this->cam->getInfo().controls.size(), 2, UI_GAP, UI_GAP);
     grid->col_width(0, 150);
-    grid->col_width(1, 250);
+    grid->col_weight(0, 0);
+    grid->col_weight(1, 1);
 
     size_t i = 0;
     for (const Control& ctrl : this->cam->getInfo().controls) {
@@ -297,7 +340,7 @@ void MainWindow::onCtrlsBtnClick() {
             Fl_Value_Slider* s = new Fl_Value_Slider(0, 0, 1, 1);
             s->type(FL_HOR_SLIDER);
             s->bounds(ctrl.min, ctrl.max);
-            s->step(ctrl.step);
+            s->step((int)ctrl.step);
             s->value(ctrl.default_val);
             w = s;
             break;
@@ -325,7 +368,11 @@ void MainWindow::onCtrlsBtnClick() {
     }
 
     grid->end();
+
+    scroll->end();
     ctrls_wnd->end();
+
+    ctrls_wnd->resizable(scroll);
     
     ctrls_wnd->show();
 }
@@ -336,10 +383,19 @@ void MainWindow::camCtrlCallback(uint32_t ctrl_id, int32_t val) {
 
 // ---
 void MainWindow::configAndStartCamStream() {
+    std::lock_guard<std::mutex> rgb_lock(this->rgb_mtx);
+
     if (!this->cam->config(this->_fmt_sel->value(), this->_res_sel->value())) {
         fl_alert("Failed to configure the camera.");
         return;
     }
+    
+    Size _ = this->cam->getInfo().formats[this->_fmt_sel->value()].resolutions[this->_res_sel->value()];
+    
+    if (this->rgb) std::free(this->rgb);
+    this->rgb_size = _.first * _.second * 3;
+    this->rgb = (byte*)std::malloc(this->rgb_size);
+
     this->cam->startStream([this](FrameView fv) {
         if (this->should_cap.exchange(false)) {
             std::string filePath = this->settings.out_dir + "/" + Utils::getFormattedDt(settings.filename_fmt) + ".jpg";

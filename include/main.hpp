@@ -2,6 +2,7 @@
 #define MAIN_H
 
 #include <atomic>
+#include <cstring>
 #include <memory>
 #include <mutex>
 #include <sstream>
@@ -16,15 +17,33 @@
 #include <FL/Fl_Double_Window.H>
 #include <FL/Fl_Flex.H>
 #include <FL/Fl_Grid.H>
+#include <FL/Fl_Pack.H>
 #include <FL/Fl_Scroll.H>
 #include <FL/Fl_Value_Slider.H>
 #include "stb_image.h"
+#include <jpeglib.h>
+#include <setjmp.h>
 
 #include "core.hpp"
+#include "log.hpp"
 #include "settings.hpp"
 #include "utils.hpp"
 
 #define UI_GAP 4
+
+class ResponsiveScroll : public Fl_Scroll {
+public:
+    ResponsiveScroll(int x, int y, int w, int h) : Fl_Scroll(x, y, w, h, 0) {}
+
+    void resize(int X, int Y, int W, int H) override {
+        Fl_Scroll::resize(X, Y, W, H);
+
+        int sb_w = this->scrollbar.visible() ? this->scrollbar.w() : 0;
+
+        if (this->child(0))
+            this->child(0)->size(W - sb_w, this->child(0)->h());
+    }
+};
 
 class MainWindow {
 private:
@@ -39,6 +58,11 @@ private:
     std::atomic<bool> frame_pending{false};
 
     std::atomic<bool> should_cap{false};
+
+    byte* rgb{nullptr};
+    size_t rgb_size = 0;
+    // std::atomic<bool> p_flag{false};
+    std::mutex rgb_mtx;
 
     Fl_Double_Window* wnd;
     Fl_Box* _canvas;

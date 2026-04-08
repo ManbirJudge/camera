@@ -1,24 +1,28 @@
 #include "core.hpp"
 
-PixFmt v4l2ToPixFmt(uint32_t fmt) {
-    switch (fmt) {
+PixFmt v4l2ToPixFmt(uint32_t _fmt_desc) {
+    switch (_fmt_desc) {
         case V4L2_PIX_FMT_MJPEG: return PixFmt::MJPEG;
         case V4L2_PIX_FMT_YUYV : return PixFmt::YUYV ;
         default                : return PixFmt::FUCKU;
     }
 }
 
-uint32_t pixFmtToV4l2(PixFmt fmt) {
-    return static_cast<uint32_t>(fmt);
+uint32_t pixFmtToV4l2(PixFmt _fmt_desc) {
+    return static_cast<uint32_t>(_fmt_desc);
 }
 
 CtrlType v4l2ToCtrlType(uint32_t ctrl_type) {
     switch (ctrl_type) {
-        case V4L2_CTRL_TYPE_INTEGER: return CtrlType::Int ;
-        case V4L2_CTRL_TYPE_BOOLEAN: return CtrlType::Bool;
-        case V4L2_CTRL_TYPE_MENU   : return CtrlType::Menu;
-        case V4L2_CTRL_TYPE_BUTTON : return CtrlType::Btn ;
-        default                    : return CtrlType::Fuck;
+        case V4L2_CTRL_TYPE_BOOLEAN     : return CtrlType::Bool;
+        case V4L2_CTRL_TYPE_INTEGER     : return CtrlType::Int;
+        case V4L2_CTRL_TYPE_INTEGER64   : return CtrlType::Int64;
+        case V4L2_CTRL_TYPE_MENU        : return CtrlType::Menu;
+        case V4L2_CTRL_TYPE_INTEGER_MENU: return CtrlType::IntMenu;
+        case V4L2_CTRL_TYPE_BUTTON      : return CtrlType::Btn;
+        case V4L2_CTRL_TYPE_BITMASK     : return CtrlType::Bitmask;
+        case V4L2_CTRL_TYPE_STRING      : return CtrlType::Str;
+        default                         : return CtrlType::Unknown;
     }
 }
 
@@ -28,11 +32,15 @@ uint32_t ctrlTypeToV4l2(CtrlType ctrl_type) {
 
 std::string ctrlTypeToStr(CtrlType ctrl_type) {
     switch (ctrl_type) {
-        case CtrlType::Bool: return "Boolean";
-        case CtrlType::Btn : return "Button" ;
-        case CtrlType::Fuck: return "Unknown";
-        case CtrlType::Int : return "Integer";
-        case CtrlType::Menu: return "Menu"   ;
+        case CtrlType::Bool   : return "bool";
+        case CtrlType::Int    : return "int";
+        case CtrlType::Int64  : return "int64";
+        case CtrlType::Menu   : return "menu";
+        case CtrlType::IntMenu: return "integer menu";
+        case CtrlType::Btn    : return "button";
+        case CtrlType::Bitmask: return "bitmask";
+        case CtrlType::Str    : return "string";
+        case CtrlType::Unknown: return "unknown";
     }
     __builtin_unreachable();
 }
@@ -106,16 +114,16 @@ bool Camera::config(size_t fmtI, size_t resI) {
     Format f = this->info.formats[fmtI];
     Size r = f.resolutions[resI];
 
-    struct v4l2_format fmt = {0};
+    struct v4l2_format _fmt = {0};
 
-    fmt.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    _fmt.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
 
-    fmt.fmt.pix.width = std::get<0>(r);
-    fmt.fmt.pix.height = std::get<1>(r);
-    fmt.fmt.pix.pixelformat = pixFmtToV4l2(f.pix_fmt);
-    fmt.fmt.pix.field = V4L2_FIELD_NONE;
+    _fmt.fmt.pix.width = std::get<0>(r);
+    _fmt.fmt.pix.height = std::get<1>(r);
+    _fmt.fmt.pix.pixelformat = pixFmtToV4l2(f.pix_fmt);
+    _fmt.fmt.pix.field = V4L2_FIELD_NONE;
 
-    return ioctl(this->dev_fd, VIDIOC_S_FMT, &fmt) >= 0;
+    return ioctl(this->dev_fd, VIDIOC_S_FMT, &_fmt) >= 0;
 }
 
 void Camera::startStream(std::function<void(FrameView)> callback) {
@@ -145,6 +153,7 @@ void Camera::streamLoop(std::function<void(FrameView)> callback) {
 
     // map buffers
     void *buffers[4];
+    size_t buf_lens[4];
 
     for (int i = 0; i < req.count; i++) {
         struct v4l2_buffer buf = {0};
@@ -165,6 +174,7 @@ void Camera::streamLoop(std::function<void(FrameView)> callback) {
             this->dev_fd,
             buf.m.offset
         );
+        buf_lens[i] = buf.length;
     }
 
     // queue buffers
@@ -225,14 +235,22 @@ void Camera::streamLoop(std::function<void(FrameView)> callback) {
         Log::e() << "Failed to stop streaming.";
         return;
     }
+
+    // un-mapping buffers
+    for (int i = 0; i < req.count; i++) {
+        munmap(
+            buffers[i],
+            buf_lens[i]
+        );
+    }
     
     // releasing buffers
-    req = {0};
-    req.count = 0;
-    req.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-    req.memory = V4L2_MEMORY_MMAP;
+    struct v4l2_requestbuffers release_req = {0};
+    release_req.count = 0;
+    release_req.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    release_req.memory = V4L2_MEMORY_MMAP;
 
-    if (ioctl(this->dev_fd, VIDIOC_REQBUFS, &req) < 0) {
+    if (ioctl(this->dev_fd, VIDIOC_REQBUFS, &release_req) < 0) {
         Log::e() << "Failed to release buffers.";
         return;
     }
@@ -280,7 +298,7 @@ bool Camera::isStreaming() {
 std::vector<CamInfo> Camera::getCams() {
     std::vector<CamInfo> cameras;
 
-    for (int i = 0; i < 64; i++) {
+    for (int i = 0; i < 256; i++) {
         // opening device
         char dev[32];
         sprintf(dev, "/dev/video%d", i);
@@ -288,74 +306,72 @@ std::vector<CamInfo> Camera::getCams() {
         int f = ::open(dev, O_RDONLY);
         if (f < 0) continue;
 
-        // ---
+        // getting general metadata
+        struct v4l2_capability _capability;
+        if (ioctl(f, VIDIOC_QUERYCAP, &_capability) != 0) continue;
+        if (!(_capability.capabilities & V4L2_CAP_VIDEO_CAPTURE)) continue;
+
         CamInfo cam {};
 
-        // getting general metadata
-        struct v4l2_capability cap;
-        if (ioctl(f, VIDIOC_QUERYCAP, &cap) != 0)
-            continue;
-        if (!(cap.capabilities & V4L2_CAP_VIDEO_CAPTURE))
-            continue;
-
         cam.device = dev;
-        cam.driver = reinterpret_cast<const char*>(cap.driver);
-        cam.card = reinterpret_cast<const char*>(cap.card);
-        cam.bus = reinterpret_cast<const char*>(cap.bus_info);
+        cam.driver = reinterpret_cast<const char*>(_capability.driver);
+        cam.card = reinterpret_cast<const char*>(_capability.card);
+        cam.bus = reinterpret_cast<const char*>(_capability.bus_info);
 
         // getting formats
-        struct v4l2_fmtdesc fmt = {0};
-        fmt.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+        struct v4l2_fmtdesc _fmt_desc = {0};
+        _fmt_desc.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
 
-        while (ioctl(f, VIDIOC_ENUM_FMT, &fmt) == 0) {
-            std::string fmt_name = reinterpret_cast<const char*>(fmt.description);
+        while (ioctl(f, VIDIOC_ENUM_FMT, &_fmt_desc) == 0) {
+            // getting resolutions
             std::vector<Size> resolutions;
 
-            // getting resolutions
-            struct v4l2_frmsizeenum size = {0};
-            size.pixel_format = fmt.pixelformat;
+            struct v4l2_frmsizeenum _size = {0};
+            _size.pixel_format = _fmt_desc.pixelformat;
             
-            while (ioctl(f, VIDIOC_ENUM_FRAMESIZES, &size) == 0) {
-                if (size.type == V4L2_FRMSIZE_TYPE_DISCRETE) {
+            while (ioctl(f, VIDIOC_ENUM_FRAMESIZES, &_size) == 0) {
+                if (_size.type == V4L2_FRMSIZE_TYPE_DISCRETE) {
                     resolutions.push_back({
-                        size.discrete.width,
-                        size.discrete.height
+                        _size.discrete.width,
+                        _size.discrete.height
                     });
                 }
-                size.index++;
+                _size.index++;
             }
 
             std::sort(resolutions.begin(), resolutions.end(), [](const Size& a, const Size& b) {
-                int areaA = std::get<0>(a) * std::get<1>(a);
-                int areaB = std::get<0>(b) * std::get<1>(b);
+                int areaA = a.first * a.second;
+                int areaB = b.first * b.second;
                 return areaA > areaB;
             });
             
             // ---
             cam.formats.push_back(Format {
-                .name = fmt_name,
-                .pix_fmt = v4l2ToPixFmt(fmt.pixelformat), 
+                .name = reinterpret_cast<const char*>(_fmt_desc.description),
+                .pix_fmt = v4l2ToPixFmt(_fmt_desc.pixelformat), 
                 .resolutions = resolutions
             });
-            fmt.index++;
+            _fmt_desc.index++;
         }
 
         // getting controls
-        struct v4l2_queryctrl ctrl = {0};
+        struct v4l2_query_ext_ctrl ctrl = {0};
+        ctrl.id = V4L2_CTRL_FLAG_NEXT_CTRL;
 
-        for (ctrl.id = V4L2_CID_BASE; ctrl.id < V4L2_CID_LASTP1; ctrl.id++) {
-            if (ioctl(f, VIDIOC_QUERYCTRL, &ctrl) == 0) {
-                if (!(ctrl.flags & V4L2_CTRL_FLAG_DISABLED)) 
-                    cam.controls.push_back(Control {
-                        .id = ctrl.id,
-                        .type = v4l2ToCtrlType(ctrl.type),
-                        .name = reinterpret_cast<const char*>(ctrl.name),
-                        .min = ctrl.minimum,
-                        .max = ctrl.maximum,
-                        .step = ctrl.step,
-                        .default_val = ctrl.default_value
-                    });
-            }
+        while (ioctl(f, VIDIOC_QUERY_EXT_CTRL, &ctrl) == 0) {
+            if (!(ctrl.type == V4L2_CTRL_TYPE_CTRL_CLASS || (ctrl.flags & V4L2_CTRL_FLAG_DISABLED)))
+                cam.controls.push_back(Control {
+                    .id = ctrl.id,
+                    .type = v4l2ToCtrlType(ctrl.type),
+                    .name = std::string(reinterpret_cast<const char*>(ctrl.name)),
+
+                    .min = ctrl.minimum,
+                    .max = ctrl.maximum,
+                    .step = ctrl.step,
+                    .default_val = ctrl.default_value
+                });
+            
+            ctrl.id |= V4L2_CTRL_FLAG_NEXT_CTRL;
         }
 
         // ---
@@ -380,11 +396,11 @@ std::string Camera::fmtCam(const CamInfo& info) {
     oss << "Card   : " << info.card   << "\n";
     oss << "Bus    : " << info.bus    << "\n";
     oss << "\n[Formats]\n";
-    for (const auto& fmt : info.formats) {
-        oss << "  - " << fmt.name << " (";
-        for (size_t i = 0; i < fmt.resolutions.size(); ++i) {
-            oss << std::get<0>(fmt.resolutions[i]) << "x" << std::get<1>(fmt.resolutions[i]);
-            if (i < fmt.resolutions.size() - 1) oss << ", ";
+    for (const auto& _fmt_desc : info.formats) {
+        oss << "  - " << _fmt_desc.name << " (";
+        for (size_t i = 0; i < _fmt_desc.resolutions.size(); ++i) {
+            oss << std::get<0>(_fmt_desc.resolutions[i]) << "x" << std::get<1>(_fmt_desc.resolutions[i]);
+            if (i < _fmt_desc.resolutions.size() - 1) oss << ", ";
         }
         oss << ")\n";
     }
@@ -398,12 +414,8 @@ std::string Camera::fmtCam(const CamInfo& info) {
     return oss.str();
 }
 
-byte* yuyv2rgb(const byte* yuyv, size_t w, size_t h) {
+void yuyv2rgb(const byte* yuyv, size_t w, size_t h, byte* rgb) {
     size_t n_pix = w * h;
-    byte* rgb = (byte*)malloc(n_pix * 3);
-
-    if (!rgb) return nullptr;
-
     size_t j = 0;
 
     auto clamp = [](int x) {
@@ -433,6 +445,4 @@ byte* yuyv2rgb(const byte* yuyv, size_t w, size_t h) {
         cvt(y0, u, v);
         cvt(y1, u, v);
     }
-
-    return rgb;
 }

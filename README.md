@@ -1,6 +1,6 @@
 # Camera
-A simple camera app for Linux.<br>
-Build using V4L2 and FLTK.
+A USB camera app for Linux.<br>
+Built using V4L2 and FLTK.
 ## TODOs
 - **Imporant:** Error hanldling.
 - Decide a name.
