@@ -20,7 +20,6 @@
 #include <FL/Fl_Pack.H>
 #include <FL/Fl_Scroll.H>
 #include <FL/Fl_Value_Slider.H>
-#include "stb_image.h"
 #include <jpeglib.h>
 #include <setjmp.h>
 
@@ -35,14 +34,7 @@ class ResponsiveScroll : public Fl_Scroll {
 public:
     ResponsiveScroll(int x, int y, int w, int h) : Fl_Scroll(x, y, w, h, 0) {}
 
-    void resize(int X, int Y, int W, int H) override {
-        Fl_Scroll::resize(X, Y, W, H);
-
-        int sb_w = this->scrollbar.visible() ? this->scrollbar.w() : 0;
-
-        if (this->child(0))
-            this->child(0)->size(W - sb_w, this->child(0)->h());
-    }
+    void resize(int X, int Y, int W, int H) override;
 };
 
 class MainWindow {
@@ -59,10 +51,9 @@ private:
 
     std::atomic<bool> should_cap{false};
 
-    byte* rgb{nullptr};
-    size_t rgb_size = 0;
-    // std::atomic<bool> p_flag{false};
     std::mutex rgb_mtx;
+    size_t rgb_size = 0;
+    byte* rgb{nullptr};
 
     Fl_Double_Window* wnd;
     Fl_Box* _canvas;
@@ -88,7 +79,7 @@ private:
     void onFmtSelChange();
     void onResSelChange();
     void onCtrlsBtnClick();
-    void camCtrlCallback(uint32_t ctrl_id, int32_t val);
+    void camCtrlCallback(uint32_t ctrl_id, Fl_Widget* w);
 
     void configAndStartCamStream();
 
@@ -102,5 +93,6 @@ typedef struct  {
     MainWindow* wnd;
     uint32_t ctrl_id;
 } CtrlCallbackData;
+
 
 #endif

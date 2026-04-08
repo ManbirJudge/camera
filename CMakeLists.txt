@@ -19,7 +19,6 @@ set(
     src/core.cpp
     src/main.cpp
     src/settings.cpp
-    src/stb_impl.c
     src/utils.cpp
 )
 add_executable(paneer ${SRC_FILES})

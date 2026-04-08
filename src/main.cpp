@@ -1,11 +1,20 @@
-#include "main.hpp" 
+#include "main.hpp"
 
+// --- responsive scroll
+void ResponsiveScroll::resize(int X, int Y, int W, int H) {
+    Fl_Scroll::resize(X, Y, W, H);
+
+    int sb_w = this->scrollbar.visible() ? this->scrollbar.w() : 0;
+    if (this->child(0)) this->child(0)->size(W - sb_w, this->child(0)->h());
+}
+
+// --- main window
 MainWindow::MainWindow() : cameras(Camera::getCams()) {
-    Log::d() << "Found " << cameras.size() << " cameras:";
-    for (size_t i = 0; i < cameras.size(); i++) {
-        std::cout << i << " ------------------" << std::endl;
-        std::cout << Camera::fmtCam(cameras[i]) << std::endl;
-    }
+    // Log::d() << "Found " << cameras.size() << " cameras:";
+    // for (size_t i = 0; i < cameras.size(); i++) {
+    //     std::cout << i << " ------------------" << std::endl;
+    //     std::cout << Camera::fmtCam(cameras[i]) << std::endl;
+    // }
 
     Fl::lock();
 
@@ -44,6 +53,8 @@ void MainWindow::initUi() {
     
     // canvas
     this->_canvas = new Fl_Box(0, 0, 0, 0);
+    this->_canvas->box(Fl_Boxtype::FL_FLAT_BOX);
+    this->_canvas->color(FL_BLACK);
 
     // controls
     Fl_Flex *controls = new Fl_Flex(0, 0, 0, 0, Fl_Flex::HORIZONTAL);
@@ -121,19 +132,11 @@ void MainWindow::_onCtrlsBtnClick(Fl_Widget* w, void* data) {
 }
 
 void MainWindow::_camCtrlCallback(Fl_Widget* w, void* data) {
-    CtrlCallbackData* cbData = static_cast<CtrlCallbackData*>(data);
-    MainWindow* wnd = cbData->wnd;
+    CtrlCallbackData* cb_data = static_cast<CtrlCallbackData*>(data);
+    MainWindow* wnd = cb_data->wnd;
+    uint32_t ctrl_id = cb_data->ctrl_id;
 
-    int32_t val = 0;
-    if (Fl_Value_Slider* s = dynamic_cast<Fl_Value_Slider*>(w)) {
-        val = (int32_t)s->value();
-    } else if (Fl_Check_Button* cb = dynamic_cast<Fl_Check_Button*>(w)) {
-        val = cb->value();
-    }
-
-    wnd->camCtrlCallback(cbData->ctrl_id, val);
-
-    // delete cbData;
+    wnd->camCtrlCallback(cb_data->ctrl_id, w);
 }
 
 // event handlers
@@ -331,44 +334,75 @@ void MainWindow::onCtrlsBtnClick() {
         lbl->copy_label(ctrl.name.c_str());
         lbl->align(FL_ALIGN_RIGHT | FL_ALIGN_INSIDE);
 
-        CtrlCallbackData* cbData = new CtrlCallbackData{ this, ctrl.id };  // TODO: delete this somewhere
+        CtrlCallbackData* cb_data = new CtrlCallbackData{ this, ctrl.id };  // TODO: delete this somewhere
+
+        auto res = this->cam->getCtrl(ctrl);
+        ControlValue val = res.second;
 
         Fl_Widget* w = nullptr;
-        switch (ctrl.type)
-        {
-        case CtrlType::Int: {
-            Fl_Value_Slider* s = new Fl_Value_Slider(0, 0, 1, 1);
-            s->type(FL_HOR_SLIDER);
-            s->bounds(ctrl.min, ctrl.max);
-            s->step((int)ctrl.step);
-            s->value(ctrl.default_val);
-            w = s;
-            break;
-        }
-        case CtrlType::Bool: {
-            Fl_Check_Button* cb = new Fl_Check_Button(0, 0, 1, 1);
-            cb->value(ctrl.default_val);
-            w = cb;
-            break;
-        }
-        case CtrlType::Btn: {
-            w = new Fl_Button(0, 0, 1, 1, "Execute");
-            break;
-        }
-        default:
-            w = new Fl_Box(0, 0, 1, 1, "NOT SUPPORTED");
-            break;
+        switch (ctrl.type) {
+            case CtrlType::Bool: {
+                auto cb = new Fl_Check_Button(0, 0, 1, 1);
+                cb->value(val.i32 != 0);
+                w = cb;
+                break;
+            }
+            case CtrlType::Int: {
+                auto s = new Fl_Value_Slider(0, 0, 1, 1);
+                s->type(FL_HOR_SLIDER);
+                s->bounds(ctrl.min, ctrl.max);
+                s->step((int)ctrl.step);
+                s->value(val.i32);
+                w = s;
+                break;
+            }
+            case CtrlType::Int64: {
+                auto s = new Fl_Value_Slider(0, 0, 1, 1);
+                s->type(FL_HOR_SLIDER);
+                s->bounds(ctrl.min, ctrl.max);
+                s->step((int)ctrl.step);
+                s->value(val.i64);
+                w = s;
+                break;
+            }
+            case CtrlType::Menu: {
+                auto c = new Fl_Choice(0, 0, 1, 1);
+                int32_t x = 0, y = 0;
+                c->add(Utils::join<MenuItem>(ctrl.menu, "|", [val, c, &x, &y](const MenuItem& _) {
+                    if (_.first == val.i32) y = x;
+                    x++; 
+                    return _.second;
+                }).c_str());
+                c->value(y);
+                w = c;
+                break;
+            }
+            case CtrlType::IntMenu: {
+                auto c = new Fl_Choice(0, 0, 1, 1);
+                int32_t x = 0, y = 0;
+                c->add(Utils::join<IntMenuItem>(ctrl.intMenu, "|", [val, c, &x, &y](const IntMenuItem& _) {
+                    if (_.first == val.i32) y = x;
+                    x++; 
+                    return std::to_string(_.second);
+                }).c_str());
+                c->value(y);
+                w = c;
+                break;
+            } 
+            default: {
+                w = new Fl_Box(0, 0, 1, 1, "--- not supported ---");
+                break;
+            }
         }
 
         w->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
-        w->callback(MainWindow::_camCtrlCallback, cbData);
+        w->callback(MainWindow::_camCtrlCallback, cb_data);
         
         grid->widget(lbl, i, 0);
         grid->widget(w, i++, 1);
     }
 
     grid->end();
-
     scroll->end();
     ctrls_wnd->end();
 
@@ -377,11 +411,53 @@ void MainWindow::onCtrlsBtnClick() {
     ctrls_wnd->show();
 }
 
-void MainWindow::camCtrlCallback(uint32_t ctrl_id, int32_t val) {
-    this->cam->setCtrl(ctrl_id, val);
+void MainWindow::camCtrlCallback(uint32_t ctrl_id, Fl_Widget* w) {
+    auto _ = this->cam->getInfo().controls;
+    auto ctrl_it = std::find_if(
+        _.begin(),
+        _.end(),
+        [ctrl_id](const Control& c) {
+            return c.id == ctrl_id;
+        }
+    );
+    if (ctrl_it == _.end()) return;
+
+    ControlValue val{0};
+    switch (ctrl_it->type)
+    {
+    case CtrlType::Bool:
+        if (auto a = dynamic_cast<Fl_Check_Button*>(w)) val.i32 = a->value();
+        else return;
+        break;
+
+    case CtrlType::Int:
+        if (auto a = dynamic_cast<Fl_Value_Slider*>(w)) val.i32 = a->value();
+        else return;
+        break;
+    
+    case CtrlType::Int64:
+        if (auto a = dynamic_cast<Fl_Value_Slider*>(w)) val.i64 = a->value();
+        else return;
+        break;
+    
+    case CtrlType::Menu:
+        if (auto a = dynamic_cast<Fl_Choice*>(w)) val.i32 = ctrl_it->menu[a->value()].first;
+        else return;
+        break; 
+
+    case CtrlType::IntMenu:
+        if (auto a = dynamic_cast<Fl_Choice*>(w)) val.i32 = ctrl_it->intMenu[a->value()].first;
+        else return;
+        break;
+
+    default:
+        return;
+    }
+
+    this->cam->setCtrl(ctrl_it[0], val);
 }
 
-// ---
+//
 void MainWindow::configAndStartCamStream() {
     std::lock_guard<std::mutex> rgb_lock(this->rgb_mtx);
 
@@ -421,7 +497,7 @@ void MainWindow::configAndStartCamStream() {
     });
 }
 
-// main
+// --- main
 int main(int argc, char** argv) {
     MainWindow wnd {};
     wnd.show();

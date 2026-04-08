@@ -25,6 +25,9 @@
 typedef uint8_t byte;
 typedef std::pair<int, int> Size;
 
+typedef std::pair<uint32_t, std::string> MenuItem;
+typedef std::pair<uint32_t, int64_t> IntMenuItem;
+
 enum class PixFmt : uint32_t {
     MJPEG = V4L2_PIX_FMT_MJPEG,
     YUYV  = V4L2_PIX_FMT_YUYV,
@@ -45,9 +48,6 @@ enum class CtrlType : uint32_t {
     Int64   = V4L2_CTRL_TYPE_INTEGER64,
     Menu    = V4L2_CTRL_TYPE_MENU,
     IntMenu = V4L2_CTRL_TYPE_INTEGER_MENU,
-    Btn     = V4L2_CTRL_TYPE_BUTTON,
-    Bitmask = V4L2_CTRL_TYPE_BITMASK,
-    Str     = V4L2_CTRL_TYPE_STRING,
     Unknown = 0
 };
 CtrlType v4l2ToCtrlType(uint32_t ctrl_type);
@@ -63,7 +63,16 @@ typedef struct {
     int64_t max;
     uint64_t step;
     int64_t default_val;
+
+    std::vector<MenuItem> menu;
+    std::vector<std::pair<uint32_t, int64_t>> intMenu;
 } Control;
+
+typedef struct {
+    int32_t     i32;  // used for - Bool, Int, Menu, IntMenu, Bitmask
+    int64_t     i64;
+    // std::string str;
+} ControlValue;
 
 typedef struct {
     std::string device;
@@ -113,7 +122,8 @@ public:
     void startStream(std::function<void(FrameView)> callback);
     void stopStream();
 
-    bool setCtrl(uint32_t ctrl_id, int32_t val);
+    std::pair<bool, ControlValue> getCtrl(const Control& ctrl);
+    bool setCtrl(const Control& ctrl, ControlValue val);
 
     bool isOpen();
     bool isStreaming();

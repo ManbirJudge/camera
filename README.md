@@ -1,21 +1,17 @@
-# Camera
+# Paneer
 A USB camera app for Linux.<br>
 Built using V4L2 and FLTK.
 ## TODOs
-- **Imporant:** Error hanldling.
-- Decide a name.
-- Camera controls.
-  - Responsive scorllable UI.
-  - More control types.
-  - Load actual values, not default.
-  - Maybe - verify values after setting to make sure they are set correctly?
+- ~~Decide a name.~~
 - ~~Camera, format and resolution selection.~~
 - Control FPS.
-- Handle multiple camera formats.
+- Handle more pixel formats.
+- Handle more memory types.
+- Handle more camera control types.
+  - String
+  - Bitmask
+  - Integer menu
 - Optimize
-  - Format -> RGB
-  - RGB -> Scale
-  - Scale -> Render
-  - We can use OpenGL for RGB -> Scale -> Render?
-- Camera shutter sound effect.
+- Camera shutter sound effect
+- Error handling
 - Maybe: Video?

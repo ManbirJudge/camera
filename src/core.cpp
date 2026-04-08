@@ -19,9 +19,9 @@ CtrlType v4l2ToCtrlType(uint32_t ctrl_type) {
         case V4L2_CTRL_TYPE_INTEGER64   : return CtrlType::Int64;
         case V4L2_CTRL_TYPE_MENU        : return CtrlType::Menu;
         case V4L2_CTRL_TYPE_INTEGER_MENU: return CtrlType::IntMenu;
-        case V4L2_CTRL_TYPE_BUTTON      : return CtrlType::Btn;
-        case V4L2_CTRL_TYPE_BITMASK     : return CtrlType::Bitmask;
-        case V4L2_CTRL_TYPE_STRING      : return CtrlType::Str;
+        // case V4L2_CTRL_TYPE_BUTTON      : return CtrlType::Btn;
+        // case V4L2_CTRL_TYPE_BITMASK     : return CtrlType::Bitmask;
+        // case V4L2_CTRL_TYPE_STRING      : return CtrlType::Str;
         default                         : return CtrlType::Unknown;
     }
 }
@@ -37,9 +37,9 @@ std::string ctrlTypeToStr(CtrlType ctrl_type) {
         case CtrlType::Int64  : return "int64";
         case CtrlType::Menu   : return "menu";
         case CtrlType::IntMenu: return "integer menu";
-        case CtrlType::Btn    : return "button";
-        case CtrlType::Bitmask: return "bitmask";
-        case CtrlType::Str    : return "string";
+        // case CtrlType::Btn    : return "button";
+        // case CtrlType::Bitmask: return "bitmask";
+        // case CtrlType::Str    : return "string";
         case CtrlType::Unknown: return "unknown";
     }
     __builtin_unreachable();
@@ -262,29 +262,73 @@ void Camera::stopStream() {
         this->streamWorker.join();
 }
 
-bool Camera::setCtrl(uint32_t ctrl_id, int32_t val) {
+std::pair<bool, ControlValue> Camera::getCtrl(const Control& ctrl) {
+    ControlValue val{0};
+
     if (!this->is_open) {
         Log::e() << "Camera not open.";
-        return false;
+        return { false, val };
     }
     
-    struct v4l2_control ctrl = {};
+    struct v4l2_ext_control _ctrl {0};
+    struct v4l2_ext_controls _ctrls {0};
 
-    // if (std::find_if(
-    //     this->info.controls.begin(),
-    //     this->info.controls.end(),
-    //     [ctrl_id](const Control& c) {
-    //         return c.id == ctrl_id;
-    //     }
-    // ) == this->info.controls.end()) {
-    //     Log::e() << "Control with id=" << ctrl_id << " not found.";
-    //     return false;
-    // }
+    _ctrl.id = ctrl.id;
 
-    ctrl.id = ctrl_id;
-    ctrl.value = val;
+    _ctrls.count = 1;
+    _ctrls.controls = &_ctrl;
 
-    return ioctl(this->dev_fd, VIDIOC_S_CTRL, &ctrl);
+    if (ioctl(this->dev_fd, VIDIOC_G_EXT_CTRLS, &_ctrls) != 0)
+        return { false, val };
+
+    switch (ctrl.type)
+    {
+    case CtrlType::Bool:
+    case CtrlType::Int:
+    case CtrlType::Menu:
+    case CtrlType::IntMenu:
+        val.i32 = _ctrl.value;
+        break;
+    case CtrlType::Int64:
+        val.i64 = _ctrl.value64;
+        break;
+    default:
+        break;
+    }
+
+    return { true, val };
+}
+
+bool Camera::setCtrl(const Control& ctrl, ControlValue val) {
+    if (!this->is_open) {
+        Log::e() << "Camera not open.";
+        return false; 
+    }
+ 
+    struct v4l2_ext_control _ctrl {0};
+    struct v4l2_ext_controls _ctrls {0};
+
+    _ctrl.id = ctrl.id;
+
+    _ctrls.count = 1;
+    _ctrls.controls = &_ctrl;
+
+    switch (ctrl.type)
+    {
+    case CtrlType::Bool:
+    case CtrlType::Int:
+    case CtrlType::Menu:
+    case CtrlType::IntMenu:
+        _ctrl.value = val.i32;
+        break;
+    case CtrlType::Int64:
+        _ctrl.value64 = val.i64;
+        break;
+    default:
+        break;
+    }
+
+    return ioctl(this->dev_fd, VIDIOC_S_EXT_CTRLS, &_ctrls) != 0;
 }
 
 bool Camera::isOpen() {
@@ -355,23 +399,45 @@ std::vector<CamInfo> Camera::getCams() {
         }
 
         // getting controls
-        struct v4l2_query_ext_ctrl ctrl = {0};
-        ctrl.id = V4L2_CTRL_FLAG_NEXT_CTRL;
+        struct v4l2_query_ext_ctrl _ctrl = {0};
+        _ctrl.id = V4L2_CTRL_FLAG_NEXT_CTRL;
 
-        while (ioctl(f, VIDIOC_QUERY_EXT_CTRL, &ctrl) == 0) {
-            if (!(ctrl.type == V4L2_CTRL_TYPE_CTRL_CLASS || (ctrl.flags & V4L2_CTRL_FLAG_DISABLED)))
-                cam.controls.push_back(Control {
-                    .id = ctrl.id,
-                    .type = v4l2ToCtrlType(ctrl.type),
-                    .name = std::string(reinterpret_cast<const char*>(ctrl.name)),
+        while (ioctl(f, VIDIOC_QUERY_EXT_CTRL, &_ctrl) == 0) {
+            if (!(_ctrl.type == V4L2_CTRL_TYPE_CTRL_CLASS || (_ctrl.flags & V4L2_CTRL_FLAG_DISABLED))) {
+                Control ctrl{
+                    .id = _ctrl.id,
+                    .type = v4l2ToCtrlType(_ctrl.type),
+                    .name = std::string(reinterpret_cast<const char*>(_ctrl.name)),
 
-                    .min = ctrl.minimum,
-                    .max = ctrl.maximum,
-                    .step = ctrl.step,
-                    .default_val = ctrl.default_value
-                });
+                    .min = _ctrl.minimum,
+                    .max = _ctrl.maximum,
+                    .step = _ctrl.step,
+                    .default_val = _ctrl.default_value
+                };
+
+                if (ctrl.type == CtrlType::Menu) {
+                    struct v4l2_querymenu _menu {0};
+                    _menu.id = ctrl.id;
+
+                    for (int j = ctrl.min; j <= ctrl.max; j++) {
+                        _menu.index = j;
+
+                        if (ioctl(f, VIDIOC_QUERYMENU, &_menu) == 0) {
+                            ctrl.menu.push_back(MenuItem {
+                                j,
+                                std::string(reinterpret_cast<const char*>(_menu.name))
+                            });
+                        } else {
+                            if (errno == EINVAL) continue;  // invalid index -> skip
+                            break;                          // something bad
+                        }
+                    }
+                }
+
+                cam.controls.push_back(ctrl);
+            }
             
-            ctrl.id |= V4L2_CTRL_FLAG_NEXT_CTRL;
+            _ctrl.id |= V4L2_CTRL_FLAG_NEXT_CTRL;
         }
 
         // ---
@@ -391,10 +457,10 @@ std::string Camera::fmt() {
 std::string Camera::fmtCam(const CamInfo& info) {
     std::ostringstream oss;
 
-    oss << "Device : " << info.device << "\n";
-    oss << "Driver : " << info.driver << "\n";
-    oss << "Card   : " << info.card   << "\n";
-    oss << "Bus    : " << info.bus    << "\n";
+    oss << "Device: " << info.device << "\n";
+    oss << "Driver: " << info.driver << "\n";
+    oss << "Card  : " << info.card   << "\n";
+    oss << "Bus   : " << info.bus    << "\n";
     oss << "\n[Formats]\n";
     for (const auto& _fmt_desc : info.formats) {
         oss << "  - " << _fmt_desc.name << " (";
@@ -408,6 +474,10 @@ std::string Camera::fmtCam(const CamInfo& info) {
     for (size_t i = 0, n = info.controls.size(); i < n; i++) {
         const Control ctrl = info.controls[i];
         oss << "  - " << ctrl.name << " (" << ctrlTypeToStr(ctrl.type) << ')';
+        if (ctrl.type == CtrlType::Menu) {
+            oss << "\n      Options: ";
+            for (auto entry : ctrl.menu) oss << entry.second << ", ";
+        }
         if (i < n - 1) oss << "\n";
     }
 
